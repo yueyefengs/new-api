@@ -1,0 +1,11 @@
+services:
+  new-api:
+    image: ${IMAGE_NAME:-swr.cn-north-9.myhuaweicloud.com/panshiyuxugong/new-api:latest}
+    container_name: new-api
+    network_mode: "host"
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./data:/data
+      - ./logs:/app/logs

@@ -1311,7 +1311,7 @@ func GenerateTempToken(c *gin.Context) {
 	if strings.HasPrefix(accessToken, "Bearer ") {
 		accessToken = accessToken[7:]
 	}
-	user := model.ValidateAccessToken(accessToken)
+	user, _ := model.ValidateAccessToken(accessToken)
 	if user == nil || user.Role < common.RoleAdminUser {
 		c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "Admin privileges required"})
 		return
