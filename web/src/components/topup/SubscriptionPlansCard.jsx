@@ -108,6 +108,9 @@ const SubscriptionPlansCard = ({
     setRefreshing(true);
     try {
       await reloadSubscriptionSelf?.();
+      if (window.parent && window.parent !== window) {
+        window.parent.postMessage({ type: 'NEW_API_VIP_SUCCESS' }, '*');
+      }
     } finally {
       setRefreshing(false);
     }
@@ -127,6 +130,9 @@ const SubscriptionPlansCard = ({
         window.open(res.data.data?.pay_link, '_blank');
         showSuccess(t('已打开支付页面'));
         closeBuy();
+        if (window.parent && window.parent !== window) {
+          window.parent.postMessage({ type: 'NEW_API_VIP_SUCCESS' }, '*');
+        }
       } else {
         const errorMsg =
           typeof res.data?.data === 'string'
@@ -155,6 +161,9 @@ const SubscriptionPlansCard = ({
         window.open(res.data.data?.checkout_url, '_blank');
         showSuccess(t('已打开支付页面'));
         closeBuy();
+        if (window.parent && window.parent !== window) {
+          window.parent.postMessage({ type: 'NEW_API_VIP_SUCCESS' }, '*');
+        }
       } else {
         const errorMsg =
           typeof res.data?.data === 'string'
@@ -184,6 +193,9 @@ const SubscriptionPlansCard = ({
         submitEpayForm({ url: res.data.url, params: res.data.data });
         showSuccess(t('已发起支付'));
         closeBuy();
+        if (window.parent && window.parent !== window) {
+          window.parent.postMessage({ type: 'NEW_API_VIP_SUCCESS' }, '*');
+        }
       } else {
         const errorMsg =
           typeof res.data?.data === 'string'

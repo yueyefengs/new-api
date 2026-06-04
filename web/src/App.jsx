@@ -65,6 +65,24 @@ function App() {
   const location = useLocation();
   const [statusState] = useContext(StatusContext);
 
+  // 影子账户免密单点登录拦截器
+  React.useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const tempToken = params.get('temp_token');
+    if (tempToken) {
+      // 写入影子 token 完成前端认证接管
+      localStorage.setItem('user', JSON.stringify({ token: tempToken }));
+      
+      // 清理地址栏 query param
+      params.delete('temp_token');
+      const newSearch = params.toString();
+      const cleanUrl = window.location.origin + location.pathname + (newSearch ? `?${newSearch}` : '');
+      
+      // 重定向强刷，使 React App 重新以该影子身份加载
+      window.location.replace(cleanUrl);
+    }
+  }, [location]);
+
   // 获取模型广场权限配置
   const pricingRequireAuth = useMemo(() => {
     const headerNavModulesConfig = statusState?.status?.HeaderNavModules;

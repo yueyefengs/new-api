@@ -76,6 +76,7 @@ import {
   Server,
   CalendarClock,
 } from 'lucide-react';
+import { FaLinkedin } from 'react-icons/fa';
 import {
   SiAtlassian,
   SiAuth0,
@@ -89,7 +90,6 @@ import {
   SiGitlab,
   SiGoogle,
   SiKeycloak,
-  SiLinkedin,
   SiNextcloud,
   SiNotion,
   SiOkta,
@@ -504,7 +504,7 @@ const oauthProviderIconMap = {
   google: SiGoogle,
   discord: SiDiscord,
   facebook: SiFacebook,
-  linkedin: SiLinkedin,
+  linkedin: FaLinkedin,
   x: SiX,
   twitter: SiX,
   slack: SiSlack,

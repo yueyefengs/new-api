@@ -47,6 +47,13 @@ func GetAllTokens(c *gin.Context) {
 
 func SearchTokens(c *gin.Context) {
 	userId := c.GetInt("id")
+	if c.GetInt("role") >= common.RoleAdminUser {
+		if targetUserStr := c.Query("user_id"); targetUserStr != "" {
+			if targetUserId, err := strconv.Atoi(targetUserStr); err == nil {
+				userId = targetUserId
+			}
+		}
+	}
 	keyword := c.Query("keyword")
 	token := c.Query("token")
 
@@ -80,6 +87,11 @@ func GetToken(c *gin.Context) {
 func GetTokenKey(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	userId := c.GetInt("id")
+	if c.GetInt("role") >= common.RoleAdminUser {
+		if t, err := model.GetTokenById(id); err == nil {
+			userId = t.UserId
+		}
+	}
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -207,8 +219,12 @@ func AddToken(c *gin.Context) {
 		common.SysLog("failed to generate token key: " + err.Error())
 		return
 	}
+	userId := c.GetInt("id")
+	if c.GetInt("role") >= common.RoleAdminUser && token.UserId > 0 {
+		userId = token.UserId
+	}
 	cleanToken := model.Token{
-		UserId:             c.GetInt("id"),
+		UserId:             userId,
 		Name:               token.Name,
 		Key:                key,
 		CreatedTime:        common.GetTimestamp(),
@@ -346,7 +362,15 @@ func GetTokenKeysBatch(c *gin.Context) {
 		return
 	}
 	userId := c.GetInt("id")
-	tokens, err := model.GetTokenKeysByIds(tokenBatch.Ids, userId)
+	var tokens []model.Token
+	var err error
+	if c.GetInt("role") >= common.RoleAdminUser {
+		err = model.DB.Select("id", "key").Where("id IN (?)", tokenBatch.Ids).Find(&tokens).Error
+	} else {
+		var list []model.Token
+		list, err = model.GetTokenKeysByIds(tokenBatch.Ids, userId)
+		tokens = list
+	}
 	if err != nil {
 		common.ApiError(c, err)
 		return

@@ -24,6 +24,8 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+var tempTokens sync.Map
+
 type LoginRequest struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
@@ -1196,4 +1198,122 @@ func UpdateUserSetting(c *gin.Context) {
 	}
 
 	common.ApiSuccessI18n(c, i18n.MsgSettingSaved, nil)
+}
+
+type TempTokenInfo struct {
+	UserId    int
+	ExpiredAt int64
+}
+
+func GenerateTempToken(c *gin.Context) {
+	accessToken := c.Request.Header.Get("Authorization")
+	if accessToken == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "Unauthorized"})
+		return
+	}
+	if strings.HasPrefix(accessToken, "Bearer ") {
+		accessToken = accessToken[7:]
+	}
+	user := model.ValidateAccessToken(accessToken)
+	if user == nil || user.Role < common.RoleAdminUser {
+		c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "Admin privileges required"})
+		return
+	}
+
+	userIdStr := c.Query("user_id")
+	userId, err := strconv.Atoi(userIdStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "Invalid user_id"})
+		return
+	}
+
+	// 验证用户是否存在
+	_, err = model.GetUserById(userId, false)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "User not found"})
+		return
+	}
+
+	tempToken, err := common.GenerateRandomKey(32)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "Failed to generate token"})
+		return
+	}
+
+	// 缓存临时 token，5 分钟有效
+	tempTokens.Store(tempToken, TempTokenInfo{
+		UserId:    userId,
+		ExpiredAt: common.GetTimestamp() + 300,
+	})
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data": map[string]string{
+			"temp_token": tempToken,
+		},
+	})
+}
+
+func TempLogin(c *gin.Context) {
+	token := c.Query("token")
+	redirectUrl := c.Query("redirect")
+	if token == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "Missing token"})
+		return
+	}
+
+	val, ok := tempTokens.Load(token)
+	if !ok {
+		c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "Invalid or expired token"})
+		return
+	}
+
+	info := val.(TempTokenInfo)
+	if common.GetTimestamp() > info.ExpiredAt {
+		tempTokens.Delete(token)
+		c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "Token expired"})
+		return
+	}
+
+	tempTokens.Delete(token)
+
+	user, err := model.GetUserById(info.UserId, true)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "User not found"})
+		return
+	}
+
+	// 确保 AccessToken 存在
+	if user.AccessToken == nil || *user.AccessToken == "" {
+		randI := common.GetRandomInt(4)
+		key, _ := common.GenerateRandomKey(29 + randI)
+		user.AccessToken = &key
+		_ = user.Update(false)
+	}
+
+	// 写入 gin session 登录态
+	session := sessions.Default(c)
+	session.Set("id", user.Id)
+	session.Set("username", user.Username)
+	session.Set("role", user.Role)
+	session.Set("status", user.Status)
+	session.Set("group", user.Group)
+	_ = session.Save()
+
+	if redirectUrl != "" {
+		separator := "?"
+		if strings.Contains(redirectUrl, "?") {
+			separator = "&"
+		}
+		c.Redirect(http.StatusTemporaryRedirect, fmt.Sprintf("%s%stemp_token=%s", redirectUrl, separator, user.AccessToken))
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "Login success",
+		"data": map[string]interface{}{
+			"token": user.AccessToken,
+		},
+	})
 }

@@ -130,6 +130,9 @@ const TopUp = () => {
           content: t('成功兑换额度：') + renderQuota(data),
           centered: true,
         });
+        if (window.parent && window.parent !== window) {
+          window.parent.postMessage({ type: 'NEW_API_TOPUP_SUCCESS' }, '*');
+        }
         if (userState.user) {
           const updatedUser = {
             ...userState.user,
@@ -576,6 +579,9 @@ const TopUp = () => {
       setOpenHistory(true);
       searchParams.delete('show_history');
       setSearchParams(searchParams, { replace: true });
+      if (window.parent && window.parent !== window) {
+        window.parent.postMessage({ type: 'NEW_API_TOPUP_SUCCESS' }, '*');
+      }
     }
   }, []);
 
