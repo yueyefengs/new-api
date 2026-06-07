@@ -142,7 +142,7 @@ export const CHANNEL_TYPE_CONFIGS: Record<number, ChannelTypeConfig> = {
     hints: {
       key: 'Bearer Token',
       models: 'doubao-seedance-2-0',
-      other: '{"model_mapping":{"doubao-seedance-2-0":{"model_id":"15","group_id":"8"}}}',
+      other: '{"model_mapping":{"doubao-seedance-2-0":{"model_id":"31","group_id":"15"}}}',
       baseUrl: 'Default: https://chengmeng.site',
     },
   },

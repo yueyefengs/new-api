@@ -13,12 +13,12 @@ type ModelConfig struct {
 
 var DefaultModelMapping = map[string]ModelConfig{
 	"doubao-seedance-2-0": {
-		ModelID: "15",
-		GroupID: "8",
+		ModelID: "31",
+		GroupID: "15",
 	},
 	"seedance-2-0": {
-		ModelID: "15",
-		GroupID: "8",
+		ModelID: "31",
+		GroupID: "15",
 	},
 }
 
