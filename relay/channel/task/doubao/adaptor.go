@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -115,6 +116,22 @@ func (a *TaskAdaptor) Init(info *relaycommon.RelayInfo) {
 
 // ValidateRequestAndSetAction parses body, validates fields and sets default action.
 func (a *TaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycommon.RelayInfo) (taskErr *dto.TaskError) {
+	if info.TaskRelayInfo == nil {
+		info.TaskRelayInfo = &relaycommon.TaskRelayInfo{}
+	}
+	officialReq, err := taskcommon.ParseOfficialVideoRequest(c)
+	if err == nil && taskcommon.IsOfficialVideoRequest(officialReq) {
+		normalized := taskcommon.NormalizeOfficialVideoTaskRequest(officialReq, modelAliasMap)
+		if strings.TrimSpace(normalized.Prompt) == "" {
+			return service.TaskErrorWrapperLocal(fmt.Errorf("prompt is required"), "invalid_request", http.StatusBadRequest)
+		}
+		if strings.TrimSpace(normalized.Model) == "" {
+			return service.TaskErrorWrapperLocal(fmt.Errorf("model field is required"), "missing_model", http.StatusBadRequest)
+		}
+		info.Action = constant.TaskActionGenerate
+		c.Set("task_request", normalized)
+		return nil
+	}
 	// Accept only POST /v1/video/generations as "generate" action.
 	return relaycommon.ValidateBasicTaskRequest(c, info, constant.TaskActionGenerate)
 }
@@ -187,7 +204,7 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 		return nil, errors.Wrap(err, "convert request payload failed")
 	}
 	if info.IsModelMapped {
-		body.Model = info.UpstreamModelName
+		body.Model = ResolveModelAlias(info.UpstreamModelName)
 	} else {
 		info.UpstreamModelName = body.Model
 	}
@@ -269,7 +286,7 @@ func (a *TaskAdaptor) GetChannelName() string {
 
 func (a *TaskAdaptor) convertToRequestPayload(req *relaycommon.TaskSubmitReq) (*requestPayload, error) {
 	r := requestPayload{
-		Model:   req.Model,
+		Model:   ResolveModelAlias(req.Model),
 		Content: []ContentItem{},
 	}
 

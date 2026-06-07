@@ -1,5 +1,8 @@
 # AGENTS.md — Project Conventions for new-api
 
+## 交流语言
+**始终用中文回答**，包括解释、分析、报告与代码注释说明。
+
 ## Overview
 
 This is an AI API gateway/proxy built with Go. It aggregates 40+ upstream AI providers (OpenAI, Claude, Gemini, Azure, AWS Bedrock, etc.) behind a unified API, with user management, billing, rate limiting, and an admin dashboard.

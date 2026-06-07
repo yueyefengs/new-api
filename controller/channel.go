@@ -1008,7 +1008,7 @@ func FetchModels(c *gin.Context) {
 
 	baseURL := req.BaseURL
 	if baseURL == "" {
-		baseURL = constant.ChannelBaseURLs[req.Type]
+		baseURL = constant.GetChannelBaseURL(req.Type)
 	}
 
 	// remove line breaks and extra spaces.
@@ -1760,7 +1760,7 @@ func OllamaPullModel(c *gin.Context) {
 		return
 	}
 
-	baseURL := constant.ChannelBaseURLs[channel.Type]
+	baseURL := constant.GetChannelBaseURL(channel.Type)
 	if channel.GetBaseURL() != "" {
 		baseURL = channel.GetBaseURL()
 	}
@@ -1823,7 +1823,7 @@ func OllamaPullModelStream(c *gin.Context) {
 		return
 	}
 
-	baseURL := constant.ChannelBaseURLs[channel.Type]
+	baseURL := constant.GetChannelBaseURL(channel.Type)
 	if channel.GetBaseURL() != "" {
 		baseURL = channel.GetBaseURL()
 	}
@@ -1905,7 +1905,7 @@ func OllamaDeleteModel(c *gin.Context) {
 		return
 	}
 
-	baseURL := constant.ChannelBaseURLs[channel.Type]
+	baseURL := constant.GetChannelBaseURL(channel.Type)
 	if channel.GetBaseURL() != "" {
 		baseURL = channel.GetBaseURL()
 	}
@@ -1954,7 +1954,7 @@ func OllamaVersion(c *gin.Context) {
 		return
 	}
 
-	baseURL := constant.ChannelBaseURLs[channel.Type]
+	baseURL := constant.GetChannelBaseURL(channel.Type)
 	if channel.GetBaseURL() != "" {
 		baseURL = channel.GetBaseURL()
 	}

@@ -75,6 +75,10 @@ func ChannelType2APIType(channelType int) (int, bool) {
 		apiType = constant.APITypeReplicate
 	case constant.ChannelTypeCodex:
 		apiType = constant.APITypeCodex
+		// Note: task-only channels (e.g. ChannelTypeChengmeng=158, ChannelTypeDoubaoVideo=54,
+		// ChannelTypeKling=50, etc.) are not registered here because they are routed via the
+		// task adaptor path (GetTaskAdaptor), not the standard relay adaptor path.
+		// Callers receive (APITypeOpenAI, false) for these types, which is the expected fallback.
 	}
 	if apiType == -1 {
 		return constant.APITypeOpenAI, false

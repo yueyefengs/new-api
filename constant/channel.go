@@ -55,7 +55,8 @@ const (
 	ChannelTypeSora           = 55
 	ChannelTypeReplicate      = 56
 	ChannelTypeCodex          = 57
-	ChannelTypeDummy          // this one is only for count, do not add any channel after this
+	ChannelTypeChengmeng      = 158
+	ChannelTypeDummy          = 159 // this one is only for count, do not add any channel after this
 
 )
 
@@ -175,6 +176,7 @@ var ChannelTypeNames = map[int]string{
 	ChannelTypeSora:           "Sora",
 	ChannelTypeReplicate:      "Replicate",
 	ChannelTypeCodex:          "Codex",
+	ChannelTypeChengmeng:      "Chengmeng",
 }
 
 func GetChannelTypeName(channelType int) string {
@@ -182,6 +184,16 @@ func GetChannelTypeName(channelType int) string {
 		return name
 	}
 	return "Unknown"
+}
+
+func GetChannelBaseURL(channelType int) string {
+	if channelType == ChannelTypeChengmeng {
+		return "https://chengmeng.site"
+	}
+	if channelType >= 0 && channelType < len(ChannelBaseURLs) {
+		return ChannelBaseURLs[channelType]
+	}
+	return ""
 }
 
 type ChannelSpecialBase struct {
