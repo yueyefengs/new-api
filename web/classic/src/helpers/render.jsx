@@ -394,6 +394,8 @@ export function getChannelIcon(channelType) {
       return <Mistral.Color size={iconSize} />;
     case 45: // 字节火山方舟、豆包通用
       return <Doubao.Color size={iconSize} />;
+    case 158: // Chengmeng
+      return <Doubao.Color size={iconSize} />;
     case 48: // xAI
       return <XAI size={iconSize} />;
     case 49: // Coze
