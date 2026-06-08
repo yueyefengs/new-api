@@ -39,4 +39,5 @@ skills-lock.json
 .playwright-mcp
 graphify-out/
 .omo
-.playwright/.playwright-cli/
+.playwright/
+.playwright-cli/
