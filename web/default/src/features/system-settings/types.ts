@@ -237,6 +237,26 @@ export type BillingSettings = {
   StripeUnitPrice: number
   StripeMinTopUp: number
   StripePromotionCodesEnabled: boolean
+  WechatPayEnabled: boolean
+  WechatPayMchId: string
+  WechatPayAppId: string
+  WechatPayApiV3Key: string
+  WechatPayPrivateKey: string
+  WechatPaySerialNo: string
+  WechatPayNotifyUrl: string
+  WechatPayMinTopUp: number
+  WechatPayUnitPrice: number
+  AlipayEnabled: boolean
+  AlipayAppId: string
+  AlipayPrivateKey: string
+  AlipayPublicKey: string
+  AlipayAppCertPath: string
+  AlipayCertPath: string
+  AlipayRootCertPath: string
+  AlipaySandbox: boolean
+  AlipayNotifyUrl: string
+  AlipayMinTopUp: number
+  AlipayUnitPrice: number
   CreemApiKey: string
   CreemWebhookSecret: string
   CreemTestMode: boolean
