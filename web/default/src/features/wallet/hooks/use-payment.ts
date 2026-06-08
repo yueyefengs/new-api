@@ -24,11 +24,15 @@ import {
   calculateStripeAmount,
   calculateWaffoPancakeAmount,
   requestPayment,
+  requestWechatPayPayment,
+  requestAlipayPayment,
   requestStripePayment,
   isApiSuccess,
 } from '../api'
 import {
+  isAlipayNativePayment,
   isStripePayment,
+  isWechatPayPayment,
   isWaffoPancakePayment,
   submitPaymentForm,
 } from '../lib'
@@ -82,17 +86,32 @@ export function usePayment() {
         setProcessing(true)
 
         const isStripe = isStripePayment(paymentType)
+        const isWechatPay = isWechatPayPayment(paymentType)
+        const isAlipayNative = isAlipayNativePayment(paymentType)
         const amount = Math.floor(topupAmount)
 
-        const response = isStripe
-          ? await requestStripePayment({
-              amount,
-              payment_method: 'stripe',
-            })
-          : await requestPayment({
-              amount,
-              payment_method: paymentType,
-            })
+        let response
+        if (isStripe) {
+          response = await requestStripePayment({
+            amount,
+            payment_method: 'stripe',
+          })
+        } else if (isWechatPay) {
+          response = await requestWechatPayPayment({
+            amount,
+            payment_method: paymentType,
+          })
+        } else if (isAlipayNative) {
+          response = await requestAlipayPayment({
+            amount,
+            payment_method: paymentType,
+          })
+        } else {
+          response = await requestPayment({
+            amount,
+            payment_method: paymentType,
+          })
+        }
 
         if (!isApiSuccess(response)) {
           toast.error(response.message || i18next.t('Payment request failed'))
@@ -106,8 +125,23 @@ export function usePayment() {
           return true
         }
 
+        // Handle direct native QR-code payments
+        if ((isWechatPay || isAlipayNative) && response.data) {
+          const paymentUrl =
+            'code_url' in response.data
+              ? response.data.code_url
+              : 'qr_code' in response.data
+                ? response.data.qr_code
+                : undefined
+          if (paymentUrl) {
+            window.open(paymentUrl, '_blank')
+            toast.success(i18next.t('Redirecting to payment page...'))
+            return true
+          }
+        }
+
         // Handle non-Stripe payment
-        if (!isStripe && response.data) {
+        if (!isStripe && !isWechatPay && !isAlipayNative && response.data) {
           const url = (response as unknown as { url?: string }).url
           if (url) {
             submitPaymentForm(url, response.data)

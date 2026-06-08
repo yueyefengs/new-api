@@ -76,6 +76,20 @@ export function isStripePayment(paymentType: string): boolean {
 }
 
 /**
+ * Check if payment method is direct WeChat Pay
+ */
+export function isWechatPayPayment(paymentType: string): boolean {
+  return paymentType === PAYMENT_TYPES.WECHATPAY
+}
+
+/**
+ * Check if payment method is direct Alipay
+ */
+export function isAlipayNativePayment(paymentType: string): boolean {
+  return paymentType === PAYMENT_TYPES.ALIPAY_NATIVE
+}
+
+/**
  * Check if payment method is Waffo Pancake
  *
  * Pancake is a metered-style payment that goes through a dedicated checkout

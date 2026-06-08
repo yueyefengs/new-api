@@ -1402,7 +1402,11 @@ func TempLogin(c *gin.Context) {
 		if strings.Contains(redirectUrl, "?") {
 			separator = "&"
 		}
-		c.Redirect(http.StatusTemporaryRedirect, fmt.Sprintf("%s%stemp_token=%s", redirectUrl, separator, user.AccessToken))
+		accessToken := ""
+		if user.AccessToken != nil {
+			accessToken = *user.AccessToken
+		}
+		c.Redirect(http.StatusTemporaryRedirect, fmt.Sprintf("%s%stemp_token=%s", redirectUrl, separator, accessToken))
 		return
 	}
 

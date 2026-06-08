@@ -27,6 +27,7 @@ import type {
   RedemptionResponse,
   AmountResponse,
   PaymentResponse,
+  NativePaymentResponse,
   StripePaymentResponse,
   AffiliateCodeResponse,
   AffiliateTransferResponse,
@@ -115,6 +116,30 @@ export async function requestStripePayment(
   request: PaymentRequest
 ): Promise<StripePaymentResponse> {
   const res = await api.post('/api/user/stripe/pay', request, {
+    skipBusinessError: true,
+  } as Record<string, unknown>)
+  return res.data
+}
+
+/**
+ * Request direct WeChat Pay payment
+ */
+export async function requestWechatPayPayment(
+  request: PaymentRequest
+): Promise<NativePaymentResponse> {
+  const res = await api.post('/api/user/wechatpay/pay', request, {
+    skipBusinessError: true,
+  } as Record<string, unknown>)
+  return res.data
+}
+
+/**
+ * Request direct Alipay payment
+ */
+export async function requestAlipayPayment(
+  request: PaymentRequest
+): Promise<NativePaymentResponse> {
+  const res = await api.post('/api/user/alipay/pay', request, {
     skipBusinessError: true,
   } as Record<string, unknown>)
   return res.data
