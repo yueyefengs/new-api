@@ -25,7 +25,7 @@ import {
   calculateWaffoPancakeAmount,
   requestPayment,
   requestWechatPayPayment,
-  requestAlipayPayment,
+  requestAlipayPayment as requestAlipayNativePayment,
   requestStripePayment,
   isApiSuccess,
 } from '../api'
@@ -81,7 +81,10 @@ export function usePayment() {
 
   // Process payment
   const processPayment = useCallback(
-    async (topupAmount: number, paymentType: string) => {
+    async (
+      topupAmount: number,
+      paymentType: string,
+    ): Promise<{ success: boolean; qrCodeData?: string }> => {
       try {
         setProcessing(true)
 
@@ -102,7 +105,7 @@ export function usePayment() {
             payment_method: paymentType,
           })
         } else if (isAlipayNative) {
-          response = await requestAlipayPayment({
+          response = await requestAlipayNativePayment({
             amount,
             payment_method: paymentType,
           })
@@ -115,45 +118,43 @@ export function usePayment() {
 
         if (!isApiSuccess(response)) {
           toast.error(response.message || i18next.t('Payment request failed'))
-          return false
+          return { success: false }
         }
 
         // Handle Stripe payment
         if (isStripe && response.data?.pay_link) {
           window.open(response.data.pay_link as string, '_blank')
           toast.success(i18next.t('Redirecting to payment page...'))
-          return true
+          return { success: true }
         }
 
-        // Handle direct native QR-code payments
+        // Handle native QR-code payments (WeChat Pay / Alipay Native)
         if ((isWechatPay || isAlipayNative) && response.data) {
-          const paymentUrl =
+          const qrCodeData =
             'code_url' in response.data
-              ? response.data.code_url
+              ? (response.data.code_url as string | undefined)
               : 'qr_code' in response.data
-                ? response.data.qr_code
+                ? (response.data.qr_code as string | undefined)
                 : undefined
-          if (paymentUrl) {
-            window.open(paymentUrl, '_blank')
-            toast.success(i18next.t('Redirecting to payment page...'))
-            return true
+          if (qrCodeData) {
+            return { success: true, qrCodeData }
           }
         }
 
-        // Handle non-Stripe payment
+        // Handle non-Stripe / non-native payment
         if (!isStripe && !isWechatPay && !isAlipayNative && response.data) {
           const url = (response as unknown as { url?: string }).url
           if (url) {
             submitPaymentForm(url, response.data)
             toast.success(i18next.t('Redirecting to payment page...'))
-            return true
+            return { success: true }
           }
         }
 
-        return false
+        return { success: false }
       } catch (_error) {
         toast.error(i18next.t('Payment request failed'))
-        return false
+        return { success: false }
       } finally {
         setProcessing(false)
       }

@@ -25,7 +25,8 @@ import { SectionPageLayout } from '@/components/layout'
 import { AffiliateRewardsCard } from './components/affiliate-rewards-card'
 import { BillingHistoryDialog } from './components/dialogs/billing-history-dialog'
 import { CreemConfirmDialog } from './components/dialogs/creem-confirm-dialog'
-import { PaymentConfirmDialog } from './components/dialogs/payment-confirm-dialog'
+  import { PaymentConfirmDialog } from './components/dialogs/payment-confirm-dialog'
+  import { QrCodePayDialog } from './components/dialogs/qr-code-pay-dialog'
 import { TransferDialog } from './components/dialogs/transfer-dialog'
 import { RechargeFormCard } from './components/recharge-form-card'
 import { SubscriptionPlansCard } from './components/subscription-plans-card'
@@ -66,6 +67,8 @@ export function Wallet(props: WalletProps) {
     useState<PaymentMethod>()
   const [paymentLoading, setPaymentLoading] = useState<string | null>(null)
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false)
+  const [qrCodePayOpen, setQrCodePayOpen] = useState(false)
+  const [qrCodeData, setQrCodeData] = useState('')
   const [transferDialogOpen, setTransferDialogOpen] = useState(false)
   const [billingDialogOpen, setBillingDialogOpen] = useState(false)
   const [redemptionCode, setRedemptionCode] = useState('')
@@ -186,13 +189,18 @@ export function Wallet(props: WalletProps) {
     if (!selectedPaymentMethod) return
 
     const isPancake = isWaffoPancakePayment(selectedPaymentMethod.type)
-    const success = isPancake
-      ? await processWaffoPancakePayment(topupAmount)
+    const result = isPancake
+      ? { success: await processWaffoPancakePayment(topupAmount) }
       : await processPayment(topupAmount, selectedPaymentMethod.type)
 
-    if (success) {
+    if (result.success) {
       setConfirmDialogOpen(false)
-      await fetchUser()
+      if (result.qrCodeData) {
+        setQrCodeData(result.qrCodeData)
+        setQrCodePayOpen(true)
+      } else {
+        await fetchUser()
+      }
     }
   }
 
@@ -338,6 +346,18 @@ export function Wallet(props: WalletProps) {
         processing={processing || pancakeProcessing}
         discountRate={getDiscountRate()}
         usdExchangeRate={effectiveUsdExchangeRate}
+      />
+
+      <QrCodePayDialog
+        open={qrCodePayOpen}
+        onOpenChange={(open) => {
+          setQrCodePayOpen(open)
+          if (!open) fetchUser()
+        }}
+        qrCodeData={qrCodeData}
+        paymentMethod={selectedPaymentMethod}
+        topupAmount={topupAmount}
+        paymentAmount={paymentAmount}
       />
 
       <TransferDialog
