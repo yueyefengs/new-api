@@ -83,10 +83,10 @@ export function isWechatPayPayment(paymentType: string): boolean {
 }
 
 /**
- * Check if payment method is direct Alipay
+ * Check if payment method is Alipay PC Web
  */
-export function isAlipayNativePayment(paymentType: string): boolean {
-  return paymentType === PAYMENT_TYPES.ALIPAY_NATIVE
+export function isAlipayPcWebPayment(paymentType: string): boolean {
+  return paymentType === PAYMENT_TYPES.ALIPAY_PCWEB
 }
 
 /**

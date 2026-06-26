@@ -25,12 +25,12 @@ import {
   calculateWaffoPancakeAmount,
   requestPayment,
   requestWechatPayPayment,
-  requestAlipayPayment as requestAlipayNativePayment,
+  requestAlipayPcWebPayment,
   requestStripePayment,
   isApiSuccess,
 } from '../api'
 import {
-  isAlipayNativePayment,
+  isAlipayPcWebPayment,
   isStripePayment,
   isWechatPayPayment,
   isWaffoPancakePayment,
@@ -40,6 +40,14 @@ import {
 // ============================================================================
 // Payment Hook
 // ============================================================================
+
+function getStringField(data: unknown, key: string): string | undefined {
+  if (!data || typeof data !== 'object' || !(key in data)) {
+    return undefined
+  }
+  const value = (data as Record<string, unknown>)[key]
+  return typeof value === 'string' && value ? value : undefined
+}
 
 export function usePayment() {
   const [amount, setAmount] = useState<number>(0)
@@ -90,7 +98,7 @@ export function usePayment() {
 
         const isStripe = isStripePayment(paymentType)
         const isWechatPay = isWechatPayPayment(paymentType)
-        const isAlipayNative = isAlipayNativePayment(paymentType)
+        const isAlipayPcWeb = isAlipayPcWebPayment(paymentType)
         const amount = Math.floor(topupAmount)
 
         let response
@@ -104,8 +112,8 @@ export function usePayment() {
             amount,
             payment_method: paymentType,
           })
-        } else if (isAlipayNative) {
-          response = await requestAlipayNativePayment({
+        } else if (isAlipayPcWeb) {
+          response = await requestAlipayPcWebPayment({
             amount,
             payment_method: paymentType,
           })
@@ -122,14 +130,22 @@ export function usePayment() {
         }
 
         // Handle Stripe payment
-        if (isStripe && response.data?.pay_link) {
-          window.open(response.data.pay_link as string, '_blank')
+        const stripePayLink = getStringField(response.data, 'pay_link')
+        if (isStripe && stripePayLink) {
+          window.open(stripePayLink, '_blank')
           toast.success(i18next.t('Redirecting to payment page...'))
           return { success: true }
         }
 
-        // Handle native QR-code payments (WeChat Pay / Alipay Native)
-        if ((isWechatPay || isAlipayNative) && response.data) {
+        const alipayPayUrl = getStringField(response.data, 'pay_url')
+        if (isAlipayPcWeb && alipayPayUrl) {
+          window.open(alipayPayUrl, '_blank')
+          toast.success(i18next.t('Redirecting to payment page...'))
+          return { success: true }
+        }
+
+        // Handle native QR-code payments (WeChat Pay)
+        if (isWechatPay && response.data) {
           const qrCodeData =
             'code_url' in response.data
               ? (response.data.code_url as string | undefined)
@@ -141,8 +157,8 @@ export function usePayment() {
           }
         }
 
-        // Handle non-Stripe / non-native payment
-        if (!isStripe && !isWechatPay && !isAlipayNative && response.data) {
+        // Handle generic form-submit payment
+        if (!isStripe && !isWechatPay && !isAlipayPcWeb && response.data) {
           const url = (response as unknown as { url?: string }).url
           if (url) {
             submitPaymentForm(url, response.data)

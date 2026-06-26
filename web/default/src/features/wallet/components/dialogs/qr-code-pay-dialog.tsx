@@ -33,8 +33,6 @@ interface QrCodePayDialogProps {
   onOpenChange: (open: boolean) => void
   qrCodeData: string
   paymentMethod: PaymentMethod | undefined
-  topupAmount: number
-  paymentAmount: number
 }
 
 export function QrCodePayDialog({
@@ -42,8 +40,6 @@ export function QrCodePayDialog({
   onOpenChange,
   qrCodeData,
   paymentMethod,
-  topupAmount,
-  paymentAmount,
 }: QrCodePayDialogProps) {
   const { t } = useTranslation()
   const [countdown, setCountdown] = useState(300)

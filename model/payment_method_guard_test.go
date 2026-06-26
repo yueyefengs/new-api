@@ -172,3 +172,43 @@ func TestExpireSubscriptionOrder_RejectsMismatchedPaymentProvider(t *testing.T) 
 	require.NotNil(t, order)
 	assert.Equal(t, common.TopUpStatusPending, order.Status)
 }
+
+func TestCompleteNativeTopUp_CompletesAlipayPcWeb(t *testing.T) {
+	truncateTables(t)
+
+	insertUserForPaymentGuardTest(t, 404, 0)
+	insertTopUpForPaymentGuardTest(t, "ali-pcweb-topup", 404, PaymentProviderAlipayPcWeb)
+
+	err := CompleteNativeTopUp("ali-pcweb-topup", PaymentProviderAlipayPcWeb, 9.99, "127.0.0.1")
+	require.NoError(t, err)
+
+	topUp := GetTopUpByTradeNo("ali-pcweb-topup")
+	require.NotNil(t, topUp)
+	assert.Equal(t, common.TopUpStatusSuccess, topUp.Status)
+	assert.Equal(t, PaymentProviderAlipayPcWeb, topUp.PaymentProvider)
+	assert.Equal(t, int(float64(2)*common.QuotaPerUnit), getUserQuotaForPaymentGuardTest(t, 404))
+}
+
+func TestCompleteNativeSubscriptionOrder_CompletesAlipayPcWeb(t *testing.T) {
+	truncateTables(t)
+
+	insertUserForPaymentGuardTest(t, 505, 0)
+	plan := insertSubscriptionPlanForPaymentGuardTest(t, 606)
+	insertSubscriptionOrderForPaymentGuardTest(t, "sub-ali-pcweb", 505, plan.Id, PaymentProviderAlipayPcWeb)
+
+	err := CompleteNativeSubscriptionOrder(
+		"sub-ali-pcweb",
+		`{"provider":"alipay"}`,
+		PaymentProviderAlipayPcWeb,
+		PaymentMethodAlipayPcWeb,
+		9.99,
+	)
+	require.NoError(t, err)
+
+	order := GetSubscriptionOrderByTradeNo("sub-ali-pcweb")
+	require.NotNil(t, order)
+	assert.Equal(t, common.TopUpStatusSuccess, order.Status)
+	assert.Equal(t, PaymentProviderAlipayPcWeb, order.PaymentProvider)
+	assert.Equal(t, PaymentMethodAlipayPcWeb, order.PaymentMethod)
+	assert.Equal(t, int64(1), countUserSubscriptionsForPaymentGuardTest(t, 505))
+}

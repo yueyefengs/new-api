@@ -73,6 +73,68 @@ func GetSubscriptionSelf(c *gin.Context) {
 	})
 }
 
+func GetSubscriptionOrderStatus(c *gin.Context) {
+	userId := c.GetInt("id")
+	tradeNo := strings.TrimSpace(c.Query("trade_no"))
+	if tradeNo == "" {
+		common.ApiErrorMsg(c, "缺少 trade_no")
+		return
+	}
+
+	order := model.GetSubscriptionOrderByTradeNo(tradeNo)
+	if order == nil || order.UserId != userId {
+		common.ApiSuccess(c, gin.H{
+			"exists":   false,
+			"trade_no": tradeNo,
+			"status":   "unknown",
+		})
+		return
+	}
+
+	common.ApiSuccess(c, gin.H{
+		"exists":           true,
+		"trade_no":         order.TradeNo,
+		"status":           order.Status,
+		"plan_id":          order.PlanId,
+		"money":            order.Money,
+		"payment_method":   order.PaymentMethod,
+		"payment_provider": order.PaymentProvider,
+		"create_time":      order.CreateTime,
+		"complete_time":    order.CompleteTime,
+	})
+}
+
+func AdminGetSubscriptionOrderStatus(c *gin.Context) {
+	tradeNo := strings.TrimSpace(c.Query("trade_no"))
+	if tradeNo == "" {
+		common.ApiErrorMsg(c, "缺少 trade_no")
+		return
+	}
+
+	order := model.GetSubscriptionOrderByTradeNo(tradeNo)
+	if order == nil {
+		common.ApiSuccess(c, gin.H{
+			"exists":   false,
+			"trade_no": tradeNo,
+			"status":   "unknown",
+		})
+		return
+	}
+
+	common.ApiSuccess(c, gin.H{
+		"exists":           true,
+		"trade_no":         order.TradeNo,
+		"user_id":          order.UserId,
+		"status":           order.Status,
+		"plan_id":          order.PlanId,
+		"money":            order.Money,
+		"payment_method":   order.PaymentMethod,
+		"payment_provider": order.PaymentProvider,
+		"create_time":      order.CreateTime,
+		"complete_time":    order.CompleteTime,
+	})
+}
+
 func UpdateSubscriptionPreference(c *gin.Context) {
 	userId := c.GetInt("id")
 	var req BillingPreferenceRequest

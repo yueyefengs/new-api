@@ -38,6 +38,10 @@ export type AmountResponse = ApiResponse<string>
 export type PaymentResponse = ApiResponse<Record<string, unknown>> & {
   url?: string
 }
+export type AlipayPcWebPaymentResponse = ApiResponse<{
+  pay_url?: string
+  trade_no?: string
+}>
 export type NativePaymentResponse = ApiResponse<{
   code_url?: string
   qr_code?: string
@@ -129,6 +133,10 @@ export interface TopupInfo {
   enable_online_topup: boolean
   /** Whether Stripe topup is enabled */
   enable_stripe_topup: boolean
+  /** Whether direct WeChat Pay topup is enabled */
+  enable_wechatpay_topup?: boolean
+  /** Whether direct Alipay PC Web topup is enabled */
+  enable_alipay_topup?: boolean
   /** Available payment methods */
   pay_methods: PaymentMethod[]
   /** Minimum topup amount for online topup */

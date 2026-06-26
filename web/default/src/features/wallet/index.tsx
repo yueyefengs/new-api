@@ -356,8 +356,6 @@ export function Wallet(props: WalletProps) {
         }}
         qrCodeData={qrCodeData}
         paymentMethod={selectedPaymentMethod}
-        topupAmount={topupAmount}
-        paymentAmount={paymentAmount}
       />
 
       <TransferDialog

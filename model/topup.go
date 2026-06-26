@@ -31,7 +31,7 @@ const (
 	PaymentMethodWaffoPancake = "waffo_pancake"
 	PaymentMethodBalance      = "balance"
 	PaymentMethodWechatPay    = "wechatpay"
-	PaymentMethodAlipay       = "alipay_native"
+	PaymentMethodAlipayPcWeb  = "alipay_pcweb"
 )
 
 const (
@@ -42,7 +42,7 @@ const (
 	PaymentProviderWaffoPancake = "waffo_pancake"
 	PaymentProviderBalance      = "balance"
 	PaymentProviderWechatPay    = "wechatpay"
-	PaymentProviderAlipay       = "alipay_native"
+	PaymentProviderAlipayPcWeb  = "alipay_pcweb"
 )
 
 var (
@@ -51,6 +51,28 @@ var (
 	ErrTopUpStatusInvalid    = errors.New("topup status invalid")
 	ErrPaymentAmountMismatch = errors.New("payment amount mismatch")
 )
+
+func IsAlipayPaymentMethod(method string) bool {
+	return method == PaymentMethodAlipayPcWeb
+}
+
+func IsAlipayPaymentProvider(provider string) bool {
+	return provider == PaymentProviderAlipayPcWeb
+}
+
+func paymentProvidersMatch(stored string, expected string) bool {
+	if stored == expected {
+		return true
+	}
+	return IsAlipayPaymentProvider(stored) && IsAlipayPaymentProvider(expected)
+}
+
+func paymentMethodsMatch(stored string, expected string) bool {
+	if stored == expected {
+		return true
+	}
+	return IsAlipayPaymentMethod(stored) && IsAlipayPaymentMethod(expected)
+}
 
 func (topUp *TopUp) Insert() error {
 	var err error
@@ -99,8 +121,11 @@ func UpdatePendingTopUpStatus(tradeNo string, expectedPaymentProvider string, ta
 		if err := tx.Set("gorm:query_option", "FOR UPDATE").Where(refCol+" = ?", tradeNo).First(topUp).Error; err != nil {
 			return ErrTopUpNotFound
 		}
-		if expectedPaymentProvider != "" && topUp.PaymentProvider != expectedPaymentProvider {
+		if expectedPaymentProvider != "" && !paymentProvidersMatch(topUp.PaymentProvider, expectedPaymentProvider) {
 			return ErrPaymentMethodMismatch
+		}
+		if expectedPaymentProvider != "" && topUp.PaymentProvider != expectedPaymentProvider {
+			topUp.PaymentProvider = expectedPaymentProvider
 		}
 		if topUp.Status != common.TopUpStatusPending {
 			return ErrTopUpStatusInvalid
@@ -418,8 +443,11 @@ func CompleteNativeTopUp(tradeNo string, provider string, paidMoney float64, cal
 			return ErrTopUpNotFound
 		}
 
-		if topUp.PaymentProvider != provider {
+		if !paymentProvidersMatch(topUp.PaymentProvider, provider) {
 			return ErrPaymentMethodMismatch
+		}
+		if topUp.PaymentProvider != provider {
+			topUp.PaymentProvider = provider
 		}
 
 		if topUp.Status == common.TopUpStatusSuccess {

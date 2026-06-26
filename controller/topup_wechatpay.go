@@ -312,6 +312,30 @@ func WechatPayNotify(c *gin.Context) {
 	defer UnlockOrder(tradeNo)
 
 	paidMoney := decimal.NewFromInt(*transaction.Amount.Total).Div(decimal.NewFromInt(100)).InexactFloat64()
+	providerPayload := common.GetJsonString(transaction)
+	if err := model.CompleteNativeSubscriptionOrder(
+		tradeNo,
+		providerPayload,
+		model.PaymentProviderWechatPay,
+		model.PaymentMethodWechatPay,
+		paidMoney,
+	); err == nil {
+		logger.LogInfo(ctx, fmt.Sprintf("微信支付订阅购买成功 trade_no=%s money=%.2f", tradeNo, paidMoney))
+		c.JSON(http.StatusOK, gin.H{"code": "SUCCESS", "message": ""})
+		return
+	} else if err != nil && !errors.Is(err, model.ErrSubscriptionOrderNotFound) {
+		if errors.Is(err, model.ErrPaymentMethodMismatch) ||
+			errors.Is(err, model.ErrSubscriptionOrderStatusInvalid) ||
+			errors.Is(err, model.ErrPaymentAmountMismatch) {
+			logger.LogWarn(ctx, fmt.Sprintf("微信支付订阅回调业务校验失败 trade_no=%s amount=%d error=%q", tradeNo, *transaction.Amount.Total, err.Error()))
+			c.JSON(http.StatusOK, gin.H{"code": "SUCCESS", "message": ""})
+			return
+		}
+		logger.LogError(ctx, fmt.Sprintf("微信支付完成订阅失败 trade_no=%s amount=%d error=%q", tradeNo, *transaction.Amount.Total, err.Error()))
+		c.JSON(http.StatusInternalServerError, gin.H{"code": "FAIL", "message": "订阅失败"})
+		return
+	}
+
 	if err := model.CompleteNativeTopUp(tradeNo, model.PaymentProviderWechatPay, paidMoney, c.ClientIP()); err != nil {
 		if errors.Is(err, model.ErrTopUpNotFound) ||
 			errors.Is(err, model.ErrPaymentMethodMismatch) ||

@@ -116,7 +116,7 @@ func GetTopUpInfo(c *gin.Context) {
 	if isAlipayTopUpEnabled() {
 		hasAlipay := false
 		for _, method := range payMethods {
-			if method["type"] == model.PaymentMethodAlipay {
+			if method["type"] == model.PaymentMethodAlipayPcWeb {
 				hasAlipay = true
 				break
 			}
@@ -124,7 +124,7 @@ func GetTopUpInfo(c *gin.Context) {
 		if !hasAlipay {
 			payMethods = append(payMethods, map[string]string{
 				"name":      "支付宝",
-				"type":      model.PaymentMethodAlipay,
+				"type":      model.PaymentMethodAlipayPcWeb,
 				"color":     "rgba(var(--semi-blue-5), 1)",
 				"min_topup": strconv.Itoa(setting.AlipayMinTopUp),
 			})

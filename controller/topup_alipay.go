@@ -128,7 +128,7 @@ func RequestAlipay(c *gin.Context) {
 		return
 	}
 
-	if req.PaymentMethod != model.PaymentMethodAlipay {
+	if !model.IsAlipayPaymentMethod(req.PaymentMethod) {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "不支持的支付渠道"})
 		return
 	}
@@ -169,29 +169,26 @@ func RequestAlipay(c *gin.Context) {
 
 	totalAmount := fmt.Sprintf("%.2f", payMoney)
 
-	trade := alipay.TradePreCreate{
+	trade := alipay.TradePagePay{
 		Trade: alipay.Trade{
 			NotifyURL:   notifyUrl,
 			Subject:     "账户充值",
 			OutTradeNo:  tradeNo,
 			TotalAmount: totalAmount,
+			ProductCode: "FAST_INSTANT_TRADE_PAY",
+			GoodsType:   "0",
 		},
+		IntegrationType: "PCWEB",
 	}
 
-	resp, err := client.TradePreCreate(context.Background(), trade)
+	payURL, err := client.TradePagePay(trade)
 	if err != nil {
 		logger.LogError(ctx, fmt.Sprintf("支付宝下单失败 user_id=%d trade_no=%s error=%q", id, tradeNo, err.Error()))
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "创建支付订单失败"})
 		return
 	}
-
-	if !resp.IsSuccess() {
-		logger.LogError(ctx, fmt.Sprintf("支付宝下单返回失败 user_id=%d trade_no=%s code=%s msg=%s", id, tradeNo, resp.Code, resp.SubMsg))
-		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "创建支付订单失败: " + resp.SubMsg})
-		return
-	}
-	if resp.QRCode == "" {
-		logger.LogError(ctx, fmt.Sprintf("支付宝下单未返回 qr_code user_id=%d trade_no=%s", id, tradeNo))
+	if payURL == nil || strings.TrimSpace(payURL.String()) == "" {
+		logger.LogError(ctx, fmt.Sprintf("支付宝下单未返回 pay_url user_id=%d trade_no=%s", id, tradeNo))
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "创建支付订单失败"})
 		return
 	}
@@ -201,8 +198,8 @@ func RequestAlipay(c *gin.Context) {
 		Amount:          req.Amount,
 		Money:           payMoney,
 		TradeNo:         tradeNo,
-		PaymentMethod:   model.PaymentMethodAlipay,
-		PaymentProvider: model.PaymentProviderAlipay,
+		PaymentMethod:   model.PaymentMethodAlipayPcWeb,
+		PaymentProvider: model.PaymentProviderAlipayPcWeb,
 		CreateTime:      time.Now().Unix(),
 		Status:          common.TopUpStatusPending,
 	}
@@ -216,7 +213,7 @@ func RequestAlipay(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"message": "success",
 		"data": gin.H{
-			"qr_code":  resp.QRCode,
+			"pay_url":  payURL.String(),
 			"trade_no": tradeNo,
 		},
 	})
@@ -290,7 +287,32 @@ func AlipayNotify(c *gin.Context) {
 	LockOrder(tradeNo)
 	defer UnlockOrder(tradeNo)
 
-	if err := model.CompleteNativeTopUp(tradeNo, model.PaymentProviderAlipay, paidMoney.InexactFloat64(), c.ClientIP()); err != nil {
+	providerPayload := common.GetJsonString(notification)
+
+	if err := model.CompleteNativeSubscriptionOrder(
+		tradeNo,
+		providerPayload,
+		model.PaymentProviderAlipayPcWeb,
+		model.PaymentMethodAlipayPcWeb,
+		paidMoney.InexactFloat64(),
+	); err == nil {
+		logger.LogInfo(ctx, fmt.Sprintf("支付宝订阅购买成功 trade_no=%s money=%s", tradeNo, paidAmount))
+		c.String(http.StatusOK, "success")
+		return
+	} else if err != nil && !errors.Is(err, model.ErrSubscriptionOrderNotFound) {
+		if errors.Is(err, model.ErrPaymentMethodMismatch) ||
+			errors.Is(err, model.ErrSubscriptionOrderStatusInvalid) ||
+			errors.Is(err, model.ErrPaymentAmountMismatch) {
+			logger.LogWarn(ctx, fmt.Sprintf("支付宝订阅回调业务校验失败 trade_no=%s amount=%s error=%q", tradeNo, paidAmount, err.Error()))
+			c.String(http.StatusOK, "success")
+			return
+		}
+		logger.LogError(ctx, fmt.Sprintf("支付宝完成订阅失败 trade_no=%s amount=%s error=%q", tradeNo, paidAmount, err.Error()))
+		c.String(http.StatusInternalServerError, "fail")
+		return
+	}
+
+	if err := model.CompleteNativeTopUp(tradeNo, model.PaymentProviderAlipayPcWeb, paidMoney.InexactFloat64(), c.ClientIP()); err != nil {
 		if errors.Is(err, model.ErrTopUpNotFound) ||
 			errors.Is(err, model.ErrPaymentMethodMismatch) ||
 			errors.Is(err, model.ErrTopUpStatusInvalid) ||

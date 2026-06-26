@@ -27,6 +27,7 @@ import type {
   RedemptionResponse,
   AmountResponse,
   PaymentResponse,
+  AlipayPcWebPaymentResponse,
   NativePaymentResponse,
   StripePaymentResponse,
   AffiliateCodeResponse,
@@ -134,11 +135,11 @@ export async function requestWechatPayPayment(
 }
 
 /**
- * Request direct Alipay payment
+ * Request Alipay PC Web payment
  */
-export async function requestAlipayPayment(
+export async function requestAlipayPcWebPayment(
   request: PaymentRequest
-): Promise<NativePaymentResponse> {
+): Promise<AlipayPcWebPaymentResponse> {
   const res = await api.post('/api/user/alipay/pay', request, {
     skipBusinessError: true,
   } as Record<string, unknown>)
