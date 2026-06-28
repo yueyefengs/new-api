@@ -84,7 +84,7 @@ const AddEditSubscriptionModal = ({
     title: '',
     subtitle: '',
     price_amount: 0,
-    currency: 'USD',
+    currency: 'CNY',
     duration_unit: 'month',
     duration_value: 1,
     custom_seconds: 0,
@@ -108,7 +108,7 @@ const AddEditSubscriptionModal = ({
       title: p.title || '',
       subtitle: p.subtitle || '',
       price_amount: Number(p.price_amount || 0),
-      currency: 'USD',
+      currency: p.currency || 'CNY',
       duration_unit: p.duration_unit || 'month',
       duration_value: Number(p.duration_value || 1),
       custom_seconds: Number(p.custom_seconds || 0),
@@ -152,7 +152,7 @@ const AddEditSubscriptionModal = ({
         plan: {
           ...values,
           price_amount: Number(values.price_amount || 0),
-          currency: 'USD',
+          currency: String(values.currency || 'USD').trim().toUpperCase(),
           duration_value: Number(values.duration_value || 0),
           custom_seconds: Number(values.custom_seconds || 0),
           quota_reset_period: values.quota_reset_period || 'never',
@@ -343,12 +343,14 @@ const AddEditSubscriptionModal = ({
                     </Col>
 
                     <Col span={12}>
-                      <Form.Input
+                      <Form.Select
                         field='currency'
                         label={t('币种')}
-                        disabled
-                        extraText={t('由全站货币展示设置统一控制')}
-                      />
+                        style={{ width: '100%' }}
+                      >
+                        <Select.Option value='CNY'>CNY</Select.Option>
+                        <Select.Option value='USD'>USD</Select.Option>
+                      </Form.Select>
                     </Col>
 
                     <Col span={12}>

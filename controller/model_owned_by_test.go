@@ -83,3 +83,16 @@ func TestGetModelListGroupsUsesExplicitTokenGroup(t *testing.T) {
 	require.Equal(t, "vip", groups.tokenGroup)
 	require.Equal(t, []string{"vip"}, groups.ownerGroups)
 }
+
+func TestGetModelListGroupsAllowsTokenModelLimitWithoutUserContext(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	common.SetContextKey(ctx, constant.ContextKeyTokenModelLimitEnabled, true)
+
+	groups, err := getModelListGroups(ctx)
+	require.NoError(t, err)
+
+	require.Empty(t, groups.userGroup)
+	require.Empty(t, groups.tokenGroup)
+	require.Empty(t, groups.ownerGroups)
+}

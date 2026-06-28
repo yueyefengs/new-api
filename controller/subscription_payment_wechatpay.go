@@ -64,9 +64,12 @@ func SubscriptionRequestWechatPay(c *gin.Context) {
 		}
 	}
 
-	payMoney := decimal.NewFromFloat(plan.PriceAmount).
-		Mul(decimal.NewFromFloat(setting.WechatPayUnitPrice)).
-		Round(2)
+	payMoney := decimal.NewFromFloat(plan.PriceAmount).Round(2)
+	if !strings.EqualFold(strings.TrimSpace(plan.Currency), "CNY") {
+		payMoney = payMoney.
+			Mul(decimal.NewFromFloat(setting.WechatPayUnitPrice)).
+			Round(2)
+	}
 	if payMoney.LessThan(decimal.NewFromFloat(0.01)) {
 		common.ApiErrorMsg(c, "套餐金额过低")
 		return

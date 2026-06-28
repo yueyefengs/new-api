@@ -358,6 +358,40 @@ export function SubscriptionsMutateDrawer({
                 />
               </div>
 
+              <FormField
+                control={form.control}
+                name='currency'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('Currency')}</FormLabel>
+                    <Select
+                      items={[
+                        { value: 'CNY', label: 'CNY' },
+                        { value: 'USD', label: 'USD' },
+                      ]}
+                      onValueChange={field.onChange}
+                      value={field.value || 'CNY'}
+                    >
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder='CNY' />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent alignItemWithTrigger={false}>
+                        <SelectGroup>
+                          <SelectItem value='CNY'>CNY</SelectItem>
+                          <SelectItem value='USD'>USD</SelectItem>
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                    <FormDescription>
+                      {t('Subscription plan settlement currency')}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
               <div className='grid grid-cols-1 gap-3 sm:grid-cols-2'>
                 <FormField
                   control={form.control}

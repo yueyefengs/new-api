@@ -72,11 +72,17 @@ export function useSubscriptionsColumns(): ColumnDef<PlanRecord>[] {
         header: ({ column }) => (
           <DataTableColumnHeader column={column} title={t('Price')} />
         ),
-        cell: ({ row }) => (
-          <span className='font-semibold text-emerald-600'>
-            ${Number(row.original.plan.price_amount || 0).toFixed(2)}
-          </span>
-        ),
+        cell: ({ row }) => {
+          const plan = row.original.plan
+          const currency = String(plan.currency || 'USD').toUpperCase()
+          const prefix = currency === 'CNY' ? '¥' : currency === 'USD' ? '$' : `${currency} `
+          return (
+            <span className='font-semibold text-emerald-600'>
+              {prefix}
+              {Number(plan.price_amount || 0).toFixed(2)}
+            </span>
+          )
+        },
         size: 100,
       },
       {

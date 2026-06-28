@@ -21,7 +21,6 @@ import (
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
-	"github.com/samber/lo"
 )
 
 // https://platform.openai.com/docs/api-reference/models/list
@@ -29,6 +28,23 @@ import (
 var openAIModels []dto.OpenAIModels
 var openAIModelsMap map[string]dto.OpenAIModels
 var channelId2Models map[int][]string
+
+func dedupeOpenAIModelsPreferLast(models []dto.OpenAIModels) []dto.OpenAIModels {
+	seen := make(map[string]struct{}, len(models))
+	deduped := make([]dto.OpenAIModels, 0, len(models))
+	for i := len(models) - 1; i >= 0; i-- {
+		modelItem := models[i]
+		if _, ok := seen[modelItem.Id]; ok {
+			continue
+		}
+		seen[modelItem.Id] = struct{}{}
+		deduped = append(deduped, modelItem)
+	}
+	for left, right := 0, len(deduped)-1; left < right; left, right = left+1, right-1 {
+		deduped[left], deduped[right] = deduped[right], deduped[left]
+	}
+	return deduped
+}
 
 func init() {
 	// https://platform.openai.com/docs/models/model-endpoint-compatibility
@@ -116,9 +132,7 @@ func init() {
 		adaptor.Init(meta)
 		channelId2Models[i] = adaptor.GetModelList()
 	}
-	openAIModels = lo.UniqBy(openAIModels, func(m dto.OpenAIModels) string {
-		return m.Id
-	})
+	openAIModels = dedupeOpenAIModelsPreferLast(openAIModels)
 	openAIModelsMap = make(map[string]dto.OpenAIModels, len(openAIModels))
 	for _, aiModel := range openAIModels {
 		openAIModelsMap[aiModel.Id] = aiModel
@@ -193,15 +207,28 @@ type modelListGroups struct {
 func getModelListGroups(c *gin.Context) (modelListGroups, error) {
 	tokenGroup := common.GetContextKeyString(c, constant.ContextKeyTokenGroup)
 	userGroup := common.GetContextKeyString(c, constant.ContextKeyUserGroup)
+	modelLimitEnable := common.GetContextKeyBool(c, constant.ContextKeyTokenModelLimitEnabled)
 	if userGroup == "" && (tokenGroup == "" || tokenGroup == "auto") {
-		var err error
-		userGroup, err = model.GetUserGroup(c.GetInt("id"), false)
-		if err != nil {
-			return modelListGroups{}, err
+		userId := c.GetInt("id")
+		if userId > 0 {
+			var err error
+			userGroup, err = model.GetUserGroup(userId, false)
+			if err != nil {
+				return modelListGroups{}, err
+			}
+		} else if !modelLimitEnable {
+			return modelListGroups{}, fmt.Errorf("missing user context")
 		}
 	}
 
 	if tokenGroup == "auto" {
+		if userGroup == "" {
+			return modelListGroups{
+				userGroup:   userGroup,
+				tokenGroup:  tokenGroup,
+				ownerGroups: []string{},
+			}, nil
+		}
 		return modelListGroups{
 			userGroup:   userGroup,
 			tokenGroup:  tokenGroup,
@@ -213,10 +240,14 @@ func getModelListGroups(c *gin.Context) (modelListGroups, error) {
 	if tokenGroup != "" {
 		group = tokenGroup
 	}
+	ownerGroups := []string{}
+	if group != "" {
+		ownerGroups = []string{group}
+	}
 	return modelListGroups{
 		userGroup:   userGroup,
 		tokenGroup:  tokenGroup,
-		ownerGroups: []string{group},
+		ownerGroups: ownerGroups,
 	}, nil
 }
 

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -250,6 +251,8 @@ func InitLogDB() (err error) {
 func migrateDB() error {
 	// Migrate price_amount column from float/double to decimal for existing tables
 	migrateSubscriptionPlanPriceAmount()
+	// Allow longer comma-separated channel group lists for custom subscription groups.
+	migrateChannelGroupColumn()
 	// Migrate model_limits column from varchar to text for existing tables
 	if err := migrateTokenModelLimitsToText(); err != nil {
 		return err
@@ -390,7 +393,7 @@ func ensureSubscriptionPlanTableSQLite() error {
 ` + "`id`" + ` integer,
 ` + "`title`" + ` varchar(128) NOT NULL,
 ` + "`subtitle`" + ` varchar(255) DEFAULT '',
-` + "`price_amount`" + ` decimal(10,6) NOT NULL,
+` + "`price_amount`" + ` decimal(14,2) NOT NULL,
 ` + "`currency`" + ` varchar(8) NOT NULL DEFAULT 'USD',
 ` + "`duration_unit`" + ` varchar(16) NOT NULL DEFAULT 'month',
 ` + "`duration_value`" + ` integer NOT NULL DEFAULT 1,
@@ -425,7 +428,7 @@ PRIMARY KEY (` + "`id`" + `)
 	required := []sqliteColumnDef{
 		{Name: "title", DDL: "`title` varchar(128) NOT NULL"},
 		{Name: "subtitle", DDL: "`subtitle` varchar(255) DEFAULT ''"},
-		{Name: "price_amount", DDL: "`price_amount` decimal(10,6) NOT NULL"},
+		{Name: "price_amount", DDL: "`price_amount` decimal(14,2) NOT NULL"},
 		{Name: "currency", DDL: "`currency` varchar(8) NOT NULL DEFAULT 'USD'"},
 		{Name: "duration_unit", DDL: "`duration_unit` varchar(16) NOT NULL DEFAULT 'month'"},
 		{Name: "duration_value", DDL: "`duration_value` integer NOT NULL DEFAULT 1"},
@@ -508,7 +511,7 @@ func migrateTokenModelLimitsToText() error {
 	return nil
 }
 
-// migrateSubscriptionPlanPriceAmount migrates price_amount column from float/double to decimal(10,6)
+// migrateSubscriptionPlanPriceAmount migrates price_amount column to decimal(14,2)
 // This is safe to run multiple times - it checks the column type first
 func migrateSubscriptionPlanPriceAmount() {
 	// SQLite doesn't support ALTER COLUMN, and its type affinity handles this automatically
@@ -532,28 +535,31 @@ func migrateSubscriptionPlanPriceAmount() {
 
 	var alterSQL string
 	if common.UsingPostgreSQL {
-		// PostgreSQL: Check if already decimal/numeric
+		// PostgreSQL: ensure precision/scale match decimal(14,2)
 		var dataType string
-		if err := DB.Raw(`SELECT data_type FROM information_schema.columns
+		var precision int
+		var scale int
+		if err := DB.Raw(`SELECT data_type, COALESCE(numeric_precision, 0), COALESCE(numeric_scale, 0)
+			FROM information_schema.columns
 			WHERE table_schema = current_schema() AND table_name = ? AND column_name = ?`,
-			tableName, columnName).Scan(&dataType).Error; err != nil {
+			tableName, columnName).Row().Scan(&dataType, &precision, &scale); err != nil {
 			common.SysLog(fmt.Sprintf("Warning: failed to query metadata for %s.%s: %v", tableName, columnName, err))
-		} else if dataType == "numeric" {
-			return // Already decimal/numeric
+		} else if dataType == "numeric" && precision == 14 && scale == 2 {
+			return
 		}
-		alterSQL = fmt.Sprintf(`ALTER TABLE %s ALTER COLUMN %s TYPE decimal(10,6) USING %s::decimal(10,6)`,
+		alterSQL = fmt.Sprintf(`ALTER TABLE %s ALTER COLUMN %s TYPE decimal(14,2) USING %s::decimal(14,2)`,
 			tableName, columnName, columnName)
 	} else if common.UsingMySQL {
-		// MySQL: Check if already decimal
+		// MySQL: ensure precision/scale match decimal(14,2)
 		var columnType string
 		if err := DB.Raw(`SELECT COLUMN_TYPE FROM information_schema.columns
 				WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ?`,
 			tableName, columnName).Scan(&columnType).Error; err != nil {
 			common.SysLog(fmt.Sprintf("Warning: failed to query metadata for %s.%s: %v", tableName, columnName, err))
-		} else if strings.HasPrefix(strings.ToLower(columnType), "decimal") {
-			return // Already decimal
+		} else if strings.EqualFold(columnType, "decimal(14,2)") {
+			return
 		}
-		alterSQL = fmt.Sprintf("ALTER TABLE %s MODIFY COLUMN %s decimal(10,6) NOT NULL DEFAULT 0",
+		alterSQL = fmt.Sprintf("ALTER TABLE %s MODIFY COLUMN %s decimal(14,2) NOT NULL DEFAULT 0",
 			tableName, columnName)
 	} else {
 		return
@@ -563,7 +569,70 @@ func migrateSubscriptionPlanPriceAmount() {
 		if err := DB.Exec(alterSQL).Error; err != nil {
 			common.SysLog(fmt.Sprintf("Warning: failed to migrate %s.%s to decimal: %v", tableName, columnName, err))
 		} else {
-			common.SysLog(fmt.Sprintf("Successfully migrated %s.%s to decimal(10,6)", tableName, columnName))
+			common.SysLog(fmt.Sprintf("Successfully migrated %s.%s to decimal(14,2)", tableName, columnName))
+		}
+	}
+}
+
+// migrateChannelGroupColumn widens channels.group so custom multi-group channel
+// bindings do not overflow the original varchar(64) limit.
+func migrateChannelGroupColumn() {
+	if common.UsingSQLite {
+		return
+	}
+
+	tableName := "channels"
+	columnName := "group"
+
+	if !DB.Migrator().HasTable(tableName) {
+		return
+	}
+
+	if !DB.Migrator().HasColumn(&Channel{}, columnName) {
+		return
+	}
+
+	var alterSQL string
+	if common.UsingPostgreSQL {
+		var dataType string
+		var charLength int
+		if err := DB.Raw(`SELECT data_type, COALESCE(character_maximum_length, 0)
+			FROM information_schema.columns
+			WHERE table_schema = current_schema() AND table_name = ? AND column_name = ?`,
+			tableName, columnName).Row().Scan(&dataType, &charLength); err != nil {
+			common.SysLog(fmt.Sprintf("Warning: failed to query metadata for %s.%s: %v", tableName, columnName, err))
+		} else if dataType == "character varying" && charLength >= 255 {
+			return
+		}
+		alterSQL = fmt.Sprintf(`ALTER TABLE %s ALTER COLUMN "%s" TYPE varchar(255)`, tableName, columnName)
+	} else if common.UsingMySQL {
+		var columnType string
+		if err := DB.Raw(`SELECT COLUMN_TYPE FROM information_schema.columns
+				WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ?`,
+			tableName, columnName).Scan(&columnType).Error; err != nil {
+			common.SysLog(fmt.Sprintf("Warning: failed to query metadata for %s.%s: %v", tableName, columnName, err))
+		} else {
+			lowerType := strings.ToLower(columnType)
+			if strings.HasPrefix(lowerType, "varchar(") {
+				lengthStr := strings.TrimSuffix(strings.TrimPrefix(lowerType, "varchar("), ")")
+				if length, parseErr := strconv.Atoi(lengthStr); parseErr == nil && length >= 255 {
+					return
+				}
+			} else if lowerType == "text" || lowerType == "mediumtext" || lowerType == "longtext" {
+				return
+			}
+		}
+		alterSQL = fmt.Sprintf("ALTER TABLE %s MODIFY COLUMN %s varchar(255) DEFAULT 'default'",
+			tableName, commonGroupCol)
+	} else {
+		return
+	}
+
+	if alterSQL != "" {
+		if err := DB.Exec(alterSQL).Error; err != nil {
+			common.SysLog(fmt.Sprintf("Warning: failed to widen %s.%s: %v", tableName, columnName, err))
+		} else {
+			common.SysLog(fmt.Sprintf("Successfully widened %s.%s to varchar(255)", tableName, columnName))
 		}
 	}
 }

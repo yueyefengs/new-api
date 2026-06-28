@@ -219,14 +219,10 @@ func AdminCreateSubscriptionPlan(c *gin.Context) {
 		common.ApiErrorMsg(c, "价格不能为负数")
 		return
 	}
-	if req.Plan.PriceAmount > 9999 {
-		common.ApiErrorMsg(c, "价格不能超过9999")
-		return
-	}
+	req.Plan.Currency = strings.ToUpper(strings.TrimSpace(req.Plan.Currency))
 	if req.Plan.Currency == "" {
 		req.Plan.Currency = "USD"
 	}
-	req.Plan.Currency = "USD"
 	if req.Plan.AllowBalancePay == nil {
 		req.Plan.AllowBalancePay = common.GetPointer(true)
 	}
@@ -288,15 +284,11 @@ func AdminUpdateSubscriptionPlan(c *gin.Context) {
 		common.ApiErrorMsg(c, "价格不能为负数")
 		return
 	}
-	if req.Plan.PriceAmount > 9999 {
-		common.ApiErrorMsg(c, "价格不能超过9999")
-		return
-	}
 	req.Plan.Id = id
+	req.Plan.Currency = strings.ToUpper(strings.TrimSpace(req.Plan.Currency))
 	if req.Plan.Currency == "" {
 		req.Plan.Currency = "USD"
 	}
-	req.Plan.Currency = "USD"
 	if req.Plan.DurationUnit == "" {
 		req.Plan.DurationUnit = model.SubscriptionDurationMonth
 	}
