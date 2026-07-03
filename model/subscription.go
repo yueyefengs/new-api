@@ -208,12 +208,14 @@ type SubscriptionOrder struct {
 	PlanId int     `json:"plan_id" gorm:"index"`
 	Money  float64 `json:"money"`
 
-	TradeNo         string `json:"trade_no" gorm:"unique;type:varchar(255);index"`
-	PaymentMethod   string `json:"payment_method" gorm:"type:varchar(50)"`
-	PaymentProvider string `json:"payment_provider" gorm:"type:varchar(50);default:''"`
-	Status          string `json:"status"`
-	CreateTime      int64  `json:"create_time"`
-	CompleteTime    int64  `json:"complete_time"`
+	TradeNo           string `json:"trade_no" gorm:"unique;type:varchar(255);index"`
+	PaymentMethod     string `json:"payment_method" gorm:"type:varchar(50)"`
+	PaymentProvider   string `json:"payment_provider" gorm:"type:varchar(50);default:''"`
+	LifecycleScenario string `json:"lifecycle_scenario" gorm:"type:varchar(64);default:'first_purchase';index"`
+	LifecyclePayload  string `json:"lifecycle_payload" gorm:"type:text"`
+	Status            string `json:"status"`
+	CreateTime        int64  `json:"create_time"`
+	CompleteTime      int64  `json:"complete_time"`
 
 	ProviderPayload string `json:"provider_payload" gorm:"type:text"`
 }
@@ -221,6 +223,11 @@ type SubscriptionOrder struct {
 func (o *SubscriptionOrder) Insert() error {
 	if o.CreateTime == 0 {
 		o.CreateTime = common.GetTimestamp()
+	}
+	if strings.TrimSpace(o.LifecycleScenario) == "" && strings.TrimSpace(o.LifecyclePayload) == "" {
+		_ = o.SetLifecycle(SubscriptionOrderLifecycle{
+			Scenario: SubscriptionScenarioFirstPurchase,
+		})
 	}
 	return DB.Create(o).Error
 }
@@ -251,7 +258,7 @@ type UserSubscription struct {
 
 	StartTime int64  `json:"start_time" gorm:"bigint"`
 	EndTime   int64  `json:"end_time" gorm:"bigint;index;index:idx_user_sub_active,priority:3"`
-	Status    string `json:"status" gorm:"type:varchar(32);index;index:idx_user_sub_active,priority:2"` // active/expired/cancelled
+	Status    string `json:"status" gorm:"type:varchar(32);index;index:idx_user_sub_active,priority:2"` // active/scheduled/expired/cancelled
 
 	Source string `json:"source" gorm:"type:varchar(32);default:'order'"` // order/admin
 
@@ -457,64 +464,20 @@ func CreateUserSubscriptionFromPlanTx(tx *gorm.DB, userId int, plan *Subscriptio
 	if userId <= 0 {
 		return nil, errors.New("invalid user id")
 	}
-	if plan.MaxPurchasePerUser > 0 {
-		var count int64
-		if err := tx.Model(&UserSubscription{}).
-			Where("user_id = ? AND plan_id = ?", userId, plan.Id).
-			Count(&count).Error; err != nil {
-			return nil, err
-		}
-		if count >= int64(plan.MaxPurchasePerUser) {
-			return nil, errors.New("已达到该套餐购买上限")
-		}
-	}
 	nowUnix := getDBTimestampWithDB(tx)
-	now := time.Unix(nowUnix, 0)
-	endUnix, err := calcPlanEndTime(now, plan)
+	endUnix, err := calcPlanEndTime(time.Unix(nowUnix, 0), plan)
 	if err != nil {
 		return nil, err
 	}
-	resetBase := now
-	nextReset := calcNextResetTime(resetBase, plan, endUnix)
-	lastReset := int64(0)
-	if nextReset > 0 {
-		lastReset = now.Unix()
-	}
-	upgradeGroup := strings.TrimSpace(plan.UpgradeGroup)
-	prevGroup := ""
-	if upgradeGroup != "" {
-		currentGroup, err := getUserGroupByIdTx(tx, userId)
-		if err != nil {
-			return nil, err
-		}
-		if currentGroup != upgradeGroup {
-			prevGroup = currentGroup
-			if err := tx.Model(&User{}).Where("id = ?", userId).
-				Update("group", upgradeGroup).Error; err != nil {
-				return nil, err
-			}
-		}
-	}
-	sub := &UserSubscription{
-		UserId:        userId,
-		PlanId:        plan.Id,
-		AmountTotal:   plan.TotalAmount,
-		AmountUsed:    0,
-		StartTime:     now.Unix(),
-		EndTime:       endUnix,
-		Status:        "active",
-		Source:        source,
-		LastResetTime: lastReset,
-		NextResetTime: nextReset,
-		UpgradeGroup:  upgradeGroup,
-		PrevUserGroup: prevGroup,
-		CreatedAt:     common.GetTimestamp(),
-		UpdatedAt:     common.GetTimestamp(),
-	}
-	if err := tx.Create(sub).Error; err != nil {
-		return nil, err
-	}
-	return sub, nil
+	return CreateUserSubscriptionWithSpecTx(tx, CreateUserSubscriptionParams{
+		UserId:     userId,
+		Plan:       plan,
+		Source:     source,
+		StartTime:  nowUnix,
+		EndTime:    endUnix,
+		Status:     SubscriptionStatusActive,
+		ApplyGroup: true,
+	})
 }
 
 // Complete a subscription order (idempotent). Creates a UserSubscription snapshot from the plan.
@@ -561,14 +524,13 @@ func completeSubscriptionOrder(tradeNo string, providerPayload string, expectedP
 		if !plan.Enabled {
 			// still allow completion for already purchased orders
 		}
-		upgradeGroup = strings.TrimSpace(plan.UpgradeGroup)
 		if expectedPaymentProvider != "" && order.PaymentProvider != expectedPaymentProvider {
 			order.PaymentProvider = expectedPaymentProvider
 		}
 		if actualPaymentMethod != "" && order.PaymentMethod != actualPaymentMethod {
 			order.PaymentMethod = actualPaymentMethod
 		}
-		_, err = CreateUserSubscriptionFromPlanTx(tx, order.UserId, plan, "order")
+		upgradeGroup, err = applySubscriptionOrderLifecycleTx(tx, &order, plan)
 		if err != nil {
 			return err
 		}
@@ -895,13 +857,13 @@ func AdminInvalidateUserSubscription(userSubscriptionId int) (string, error) {
 		}
 		userId = sub.UserId
 		if err := tx.Model(&sub).Updates(map[string]interface{}{
-			"status":     "cancelled",
+			"status":     SubscriptionStatusCancelled,
 			"end_time":   now,
 			"updated_at": now,
 		}).Error; err != nil {
 			return err
 		}
-		target, err := downgradeUserGroupForSubscriptionTx(tx, &sub, now)
+		target, err := reconcileSubscriptionUserGroupTx(tx, sub.UserId, now)
 		if err != nil {
 			return err
 		}
@@ -939,7 +901,7 @@ func AdminDeleteUserSubscription(userSubscriptionId int) (string, error) {
 			return err
 		}
 		userId = sub.UserId
-		target, err := downgradeUserGroupForSubscriptionTx(tx, &sub, now)
+		target, err := reconcileSubscriptionUserGroupTx(tx, sub.UserId, now)
 		if err != nil {
 			return err
 		}

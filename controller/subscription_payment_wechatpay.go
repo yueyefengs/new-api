@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -16,18 +17,15 @@ import (
 	"github.com/thanhpk/randstr"
 	"github.com/wechatpay-apiv3/wechatpay-go/core"
 	"github.com/wechatpay-apiv3/wechatpay-go/services/payments/native"
+	"gorm.io/gorm"
 )
-
-type SubscriptionWechatPayRequest struct {
-	PlanId int `json:"plan_id"`
-}
 
 func SubscriptionRequestWechatPay(c *gin.Context) {
 	if !requirePaymentCompliance(c) {
 		return
 	}
 
-	var req SubscriptionWechatPayRequest
+	var req SubscriptionPaymentLifecycleRequest
 	if err := c.ShouldBindJSON(&req); err != nil || req.PlanId <= 0 {
 		common.ApiErrorMsg(c, "参数错误")
 		return
@@ -42,38 +40,12 @@ func SubscriptionRequestWechatPay(c *gin.Context) {
 		common.ApiErrorMsg(c, "套餐未启用")
 		return
 	}
-	if plan.PriceAmount < 0.01 {
-		common.ApiErrorMsg(c, "套餐金额过低")
-		return
-	}
 	if !isWechatPayTopUpEnabled() {
 		common.ApiErrorMsg(c, "微信支付未启用")
 		return
 	}
 
 	userId := c.GetInt("id")
-	if plan.MaxPurchasePerUser > 0 {
-		count, err := model.CountUserSubscriptionsByPlan(userId, plan.Id)
-		if err != nil {
-			common.ApiError(c, err)
-			return
-		}
-		if count >= int64(plan.MaxPurchasePerUser) {
-			common.ApiErrorMsg(c, "已达到该套餐购买上限")
-			return
-		}
-	}
-
-	payMoney := decimal.NewFromFloat(plan.PriceAmount).Round(2)
-	if !strings.EqualFold(strings.TrimSpace(plan.Currency), "CNY") {
-		payMoney = payMoney.
-			Mul(decimal.NewFromFloat(setting.WechatPayUnitPrice)).
-			Round(2)
-	}
-	if payMoney.LessThan(decimal.NewFromFloat(0.01)) {
-		common.ApiErrorMsg(c, "套餐金额过低")
-		return
-	}
 
 	ctx := c.Request.Context()
 	client, err := getWechatPayClient(ctx)
@@ -84,19 +56,48 @@ func SubscriptionRequestWechatPay(c *gin.Context) {
 	}
 
 	tradeNo := fmt.Sprintf("SUBWX%d%s%d", userId, randstr.String(6), time.Now().Unix())
-	order := &model.SubscriptionOrder{
-		UserId:          userId,
-		PlanId:          plan.Id,
-		Money:           payMoney.InexactFloat64(),
-		TradeNo:         tradeNo,
-		PaymentMethod:   model.PaymentMethodWechatPay,
-		PaymentProvider: model.PaymentProviderWechatPay,
-		CreateTime:      time.Now().Unix(),
-		Status:          common.TopUpStatusPending,
-	}
-	if err := order.Insert(); err != nil {
+	var payMoney decimal.Decimal
+	var order *model.SubscriptionOrder
+	err = model.DB.Transaction(func(tx *gorm.DB) error {
+		prepared, err := model.PrepareSubscriptionPurchaseTx(tx, userId, plan, model.SubscriptionPurchasePolicyInput{
+			Scenario:               req.Scenario,
+			CurrentSubscriptionId:  req.CurrentSubscriptionId,
+			ExpectedCurrentPlanId:  req.ExpectedCurrentPlanId,
+			ExpectedCurrentEndTime: req.ExpectedCurrentEndTime,
+			OverrideMoney:          req.OverrideMoney,
+		})
+		if err != nil {
+			return err
+		}
+
+		payMoney = decimal.NewFromFloat(prepared.Money).Round(2)
+		if !strings.EqualFold(strings.TrimSpace(plan.Currency), "CNY") {
+			payMoney = payMoney.
+				Mul(decimal.NewFromFloat(setting.WechatPayUnitPrice)).
+				Round(2)
+		}
+		if payMoney.LessThan(decimal.NewFromFloat(0.01)) {
+			return errors.New("套餐金额过低")
+		}
+
+		order = &model.SubscriptionOrder{
+			UserId:          userId,
+			PlanId:          plan.Id,
+			Money:           payMoney.InexactFloat64(),
+			TradeNo:         tradeNo,
+			PaymentMethod:   model.PaymentMethodWechatPay,
+			PaymentProvider: model.PaymentProviderWechatPay,
+			CreateTime:      time.Now().Unix(),
+			Status:          common.TopUpStatusPending,
+		}
+		if err := order.SetLifecycle(prepared.Lifecycle); err != nil {
+			return err
+		}
+		return tx.Create(order).Error
+	})
+	if err != nil {
 		logger.LogError(ctx, fmt.Sprintf("微信支付订阅订单创建失败 user_id=%d plan_id=%d trade_no=%s error=%q", userId, plan.Id, tradeNo, err.Error()))
-		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "创建订单失败"})
+		common.ApiErrorMsg(c, subscriptionPurchaseErrorMessage(err))
 		return
 	}
 

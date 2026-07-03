@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -14,18 +15,15 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/smartwalle/alipay/v3"
 	"github.com/thanhpk/randstr"
+	"gorm.io/gorm"
 )
-
-type SubscriptionAlipayPayRequest struct {
-	PlanId int `json:"plan_id"`
-}
 
 func SubscriptionRequestAlipayPay(c *gin.Context) {
 	if !requirePaymentCompliance(c) {
 		return
 	}
 
-	var req SubscriptionAlipayPayRequest
+	var req SubscriptionPaymentLifecycleRequest
 	if err := c.ShouldBindJSON(&req); err != nil || req.PlanId <= 0 {
 		common.ApiErrorMsg(c, "参数错误")
 		return
@@ -40,28 +38,12 @@ func SubscriptionRequestAlipayPay(c *gin.Context) {
 		common.ApiErrorMsg(c, "套餐未启用")
 		return
 	}
-	if plan.PriceAmount < 0.01 {
-		common.ApiErrorMsg(c, "套餐金额过低")
-		return
-	}
 	if !isAlipayTopUpEnabled() {
 		common.ApiErrorMsg(c, "支付宝支付未启用")
 		return
 	}
 
 	userId := c.GetInt("id")
-	if plan.MaxPurchasePerUser > 0 {
-		count, err := model.CountUserSubscriptionsByPlan(userId, plan.Id)
-		if err != nil {
-			common.ApiError(c, err)
-			return
-		}
-		if count >= int64(plan.MaxPurchasePerUser) {
-			common.ApiErrorMsg(c, "已达到该套餐购买上限")
-			return
-		}
-	}
-
 	client, err := getAlipayClient()
 	if err != nil {
 		logger.LogError(c.Request.Context(), fmt.Sprintf("支付宝订阅客户端初始化失败 user_id=%d plan_id=%d error=%q", userId, plan.Id, err.Error()))
@@ -70,19 +52,40 @@ func SubscriptionRequestAlipayPay(c *gin.Context) {
 	}
 
 	tradeNo := fmt.Sprintf("SUBALI%d%s%d", userId, randstr.String(6), time.Now().Unix())
-	order := &model.SubscriptionOrder{
-		UserId:          userId,
-		PlanId:          plan.Id,
-		Money:           plan.PriceAmount,
-		TradeNo:         tradeNo,
-		PaymentMethod:   model.PaymentMethodAlipayPcWeb,
-		PaymentProvider: model.PaymentProviderAlipayPcWeb,
-		CreateTime:      time.Now().Unix(),
-		Status:          common.TopUpStatusPending,
-	}
-	if err := order.Insert(); err != nil {
+	var order *model.SubscriptionOrder
+	err = model.DB.Transaction(func(tx *gorm.DB) error {
+		prepared, err := model.PrepareSubscriptionPurchaseTx(tx, userId, plan, model.SubscriptionPurchasePolicyInput{
+			Scenario:               req.Scenario,
+			CurrentSubscriptionId:  req.CurrentSubscriptionId,
+			ExpectedCurrentPlanId:  req.ExpectedCurrentPlanId,
+			ExpectedCurrentEndTime: req.ExpectedCurrentEndTime,
+			OverrideMoney:          req.OverrideMoney,
+		})
+		if err != nil {
+			return err
+		}
+		money := prepared.Money
+		if money < 0.01 {
+			return errors.New("套餐金额过低")
+		}
+		order = &model.SubscriptionOrder{
+			UserId:          userId,
+			PlanId:          plan.Id,
+			Money:           money,
+			TradeNo:         tradeNo,
+			PaymentMethod:   model.PaymentMethodAlipayPcWeb,
+			PaymentProvider: model.PaymentProviderAlipayPcWeb,
+			CreateTime:      time.Now().Unix(),
+			Status:          common.TopUpStatusPending,
+		}
+		if err := order.SetLifecycle(prepared.Lifecycle); err != nil {
+			return err
+		}
+		return tx.Create(order).Error
+	})
+	if err != nil {
 		logger.LogError(c.Request.Context(), fmt.Sprintf("支付宝订阅订单创建失败 user_id=%d plan_id=%d trade_no=%s error=%q", userId, plan.Id, tradeNo, err.Error()))
-		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "创建订单失败"})
+		common.ApiErrorMsg(c, subscriptionPurchaseErrorMessage(err))
 		return
 	}
 
@@ -96,7 +99,7 @@ func SubscriptionRequestAlipayPay(c *gin.Context) {
 			NotifyURL:   notifyUrl,
 			Subject:     fmt.Sprintf("订阅套餐 - %s", strings.TrimSpace(plan.Title)),
 			OutTradeNo:  tradeNo,
-			TotalAmount: fmt.Sprintf("%.2f", plan.PriceAmount),
+			TotalAmount: fmt.Sprintf("%.2f", order.Money),
 			ProductCode: "FAST_INSTANT_TRADE_PAY",
 			GoodsType:   "0",
 		},
@@ -121,7 +124,7 @@ func SubscriptionRequestAlipayPay(c *gin.Context) {
 		return
 	}
 
-	logger.LogInfo(c.Request.Context(), fmt.Sprintf("支付宝订阅订单创建成功 user_id=%d plan_id=%d trade_no=%s money=%.2f", userId, plan.Id, tradeNo, plan.PriceAmount))
+	logger.LogInfo(c.Request.Context(), fmt.Sprintf("支付宝订阅订单创建成功 user_id=%d plan_id=%d trade_no=%s money=%.2f", userId, plan.Id, tradeNo, order.Money))
 	c.JSON(http.StatusOK, gin.H{
 		"message": "success",
 		"data": gin.H{

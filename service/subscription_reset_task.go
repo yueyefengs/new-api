@@ -52,18 +52,20 @@ func runSubscriptionQuotaResetOnce() {
 
 	ctx := context.Background()
 	totalReset := 0
+	totalActivated := 0
 	totalExpired := 0
 	for {
-		n, err := model.ExpireDueSubscriptions(subscriptionResetBatchSize)
+		activated, expired, err := model.SyncDueUserSubscriptions(subscriptionResetBatchSize)
 		if err != nil {
-			logger.LogWarn(ctx, fmt.Sprintf("subscription expire task failed: %v", err))
+			logger.LogWarn(ctx, fmt.Sprintf("subscription lifecycle task failed: %v", err))
 			return
 		}
-		if n == 0 {
+		if activated == 0 && expired == 0 {
 			break
 		}
-		totalExpired += n
-		if n < subscriptionResetBatchSize {
+		totalActivated += activated
+		totalExpired += expired
+		if activated+expired < subscriptionResetBatchSize {
 			break
 		}
 	}
@@ -87,7 +89,7 @@ func runSubscriptionQuotaResetOnce() {
 			subscriptionCleanupLast.Store(time.Now().Unix())
 		}
 	}
-	if common.DebugEnabled && (totalReset > 0 || totalExpired > 0) {
-		logger.LogDebug(ctx, "subscription maintenance: reset_count=%d, expired_count=%d", totalReset, totalExpired)
+	if common.DebugEnabled && (totalReset > 0 || totalActivated > 0 || totalExpired > 0) {
+		logger.LogDebug(ctx, "subscription maintenance: reset_count=%d, activated_count=%d, expired_count=%d", totalReset, totalActivated, totalExpired)
 	}
 }
