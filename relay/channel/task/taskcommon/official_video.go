@@ -29,6 +29,7 @@ type OfficialVideoRequest struct {
 	Content       []OfficialVideoContentItem `json:"content,omitempty"`
 	GenerateAudio *dto.BoolValue             `json:"generate_audio,omitempty"`
 	Ratio         string                     `json:"ratio,omitempty"`
+	Resolution   string                     `json:"resolution,omitempty"`
 	Duration      *dto.IntValue              `json:"duration,omitempty"`
 	Watermark     *dto.BoolValue             `json:"watermark,omitempty"`
 }
@@ -104,6 +105,9 @@ func NormalizeOfficialVideoTaskRequest(req *OfficialVideoRequest, modelAliases m
 	}
 	if ratio := strings.TrimSpace(req.Ratio); ratio != "" {
 		metadata["ratio"] = ratio
+	}
+	if resolution := strings.TrimSpace(req.Resolution); resolution != "" {
+		metadata["resolution"] = resolution
 	}
 	if req.Watermark != nil {
 		metadata["watermark"] = bool(*req.Watermark)
