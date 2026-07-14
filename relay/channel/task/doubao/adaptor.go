@@ -73,6 +73,12 @@ type responseTask struct {
 	Content struct {
 		VideoURL string `json:"video_url"`
 	} `json:"content"`
+	Metadata struct {
+		ResultURL   string `json:"result_url"`
+		DownloadURL string `json:"download_url"`
+		Resolution  string `json:"resolution"`
+		Duration    int    `json:"duration"`
+	} `json:"metadata"`
 	Seed            int    `json:"seed"`
 	Resolution      string `json:"resolution"`
 	Duration        int    `json:"duration"`
@@ -149,28 +155,14 @@ func (a *TaskAdaptor) BuildRequestHeader(_ *gin.Context, req *http.Request, _ *r
 	return nil
 }
 
-// EstimateBilling 根据请求时长和分辨率返回按秒计费 OtherRatio，并检测视频输入折扣。
-// size 倍率以 480p 为基准：480p=1, 720p=2, 1080p=5, 4k=10
+// EstimateBilling 返回按秒按分辨率的计费倍率，并追加视频输入折扣。
 func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInfo) map[string]float64 {
 	req, err := relaycommon.GetTaskRequest(c)
 	if err != nil {
 		return nil
 	}
 
-	seconds := req.Duration
-	if seconds == 0 {
-		seconds, _ = strconv.Atoi(req.Seconds)
-	}
-	if seconds <= 0 {
-		seconds = 5
-	}
-
-	ratios := map[string]float64{"seconds": float64(seconds)}
-
-	sizeRatio := resolveQualitySizeRatio(req.Metadata)
-	if sizeRatio > 0 && sizeRatio != 1.0 {
-		ratios["size"] = sizeRatio
-	}
+	ratios := taskcommon.DefaultEstimateBilling(req)
 
 	if hasVideoInMetadata(req.Metadata) {
 		if ratio, ok := GetVideoInputRatio(info.OriginModelName); ok {
@@ -178,29 +170,6 @@ func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInf
 		}
 	}
 	return ratios
-}
-
-// resolveQualitySizeRatio 从 metadata 中读取 resolution 字段，映射为分辨率倍率。
-// 以 480p 为基准 1.0：720p=2, 1080p=5, 4k=10
-func resolveQualitySizeRatio(metadata map[string]interface{}) float64 {
-	if metadata == nil {
-		return 1.0
-	}
-	raw, ok := metadata["resolution"]
-	if !ok {
-		return 1.0
-	}
-	r := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", raw)))
-	switch {
-	case strings.Contains(r, "4k") || strings.Contains(r, "8k"):
-		return 10.0
-	case strings.Contains(r, "1080") || strings.Contains(r, "2k"):
-		return 5.0
-	case strings.Contains(r, "720"):
-		return 2.0
-	default:
-		return 1.0
-	}
 }
 
 // hasVideoInMetadata 直接检查 metadata 的 content 数组是否包含 video_url 条目，
@@ -378,10 +347,16 @@ func (a *TaskAdaptor) ParseTaskResult(respBody []byte) (*relaycommon.TaskInfo, e
 	case "processing", "running":
 		taskResult.Status = model.TaskStatusInProgress
 		taskResult.Progress = "50%"
-	case "succeeded":
+	case "succeeded", "completed":
 		taskResult.Status = model.TaskStatusSuccess
 		taskResult.Progress = "100%"
 		taskResult.Url = resTask.Content.VideoURL
+		if taskResult.Url == "" {
+			taskResult.Url = resTask.Metadata.ResultURL
+		}
+		if taskResult.Url == "" {
+			taskResult.Url = resTask.Metadata.DownloadURL
+		}
 		// 解析 usage 信息用于按倍率计费
 		taskResult.CompletionTokens = resTask.Usage.CompletionTokens
 		taskResult.TotalTokens = resTask.Usage.TotalTokens

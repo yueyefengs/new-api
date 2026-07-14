@@ -3,6 +3,8 @@ package taskcommon
 import (
 	"encoding/base64"
 	"fmt"
+	"strconv"
+	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
@@ -94,4 +96,52 @@ func (BaseBilling) AdjustBillingOnSubmit(_ *relaycommon.RelayInfo, _ []byte) map
 // AdjustBillingOnComplete returns 0 (keep pre-charged amount).
 func (BaseBilling) AdjustBillingOnComplete(_ *model.Task, _ *relaycommon.TaskInfo) int {
 	return 0
+}
+
+// ResolveQualitySizeRatio maps a resolution string (e.g. "720p", "1080p", "4k")
+// to a billing size multiplier relative to 480p baseline.
+// 480p=1.0, 720p=2.0, 1080p=5.0, 4k=10.0
+func ResolveQualitySizeRatio(resolution string) float64 {
+	r := strings.ToLower(strings.TrimSpace(resolution))
+	switch {
+	case strings.Contains(r, "4k") || strings.Contains(r, "8k"):
+		return 10.0
+	case strings.Contains(r, "1080") || strings.Contains(r, "2k"):
+		return 5.0
+	case strings.Contains(r, "720"):
+		return 2.0
+	default:
+		return 1.0
+	}
+}
+
+// ResolveDuration extracts duration in seconds from a TaskSubmitReq.
+// Falls back to 5 seconds if not specified.
+func ResolveDuration(req relaycommon.TaskSubmitReq) int {
+	if req.Duration > 0 {
+		return req.Duration
+	}
+	seconds, _ := strconv.Atoi(strings.TrimSpace(req.Seconds))
+	if seconds > 0 {
+		return seconds
+	}
+	return 5
+}
+
+// DefaultEstimateBilling returns OtherRatios with seconds and size based on the request.
+// Adaptors can call this and append channel-specific ratios (e.g. video_input discount).
+func DefaultEstimateBilling(req relaycommon.TaskSubmitReq) map[string]float64 {
+	ratios := map[string]float64{"seconds": float64(ResolveDuration(req))}
+
+	resolution := ""
+	if req.Metadata != nil {
+		if raw, ok := req.Metadata["resolution"]; ok {
+			resolution = fmt.Sprintf("%v", raw)
+		}
+	}
+	sizeRatio := ResolveQualitySizeRatio(resolution)
+	if sizeRatio > 0 && sizeRatio != 1.0 {
+		ratios["size"] = sizeRatio
+	}
+	return ratios
 }

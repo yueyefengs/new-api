@@ -40,12 +40,14 @@ type TaskAdaptor struct {
 }
 
 type requestPayload struct {
-	ModelID  string        `json:"model_id"`
-	GroupID  string        `json:"group_id"`
-	Prompt   string        `json:"prompt"`
-	Duration int           `json:"duration"`
-	Values   requestValues `json:"values"`
-	Images   []string      `json:"images,omitempty"`
+	ModelID      string        `json:"model_id"`
+	GroupID      string        `json:"group_id"`
+	Prompt       string        `json:"prompt"`
+	Duration     int           `json:"duration"`
+	Values       requestValues `json:"values"`
+	Images       []string      `json:"images,omitempty"`
+	AspectRatio  string        `json:"aspect_ratio,omitempty"`
+	Resolution   string        `json:"resolution,omitempty"`
 }
 
 type requestValues struct {
@@ -60,6 +62,8 @@ type requestMetadata struct {
 	Videos      []string `json:"videos,omitempty"`
 	ModelID     string   `json:"model_id,omitempty"`
 	GroupID     string   `json:"group_id,omitempty"`
+	Resolution  string   `json:"resolution,omitempty"`
+	Ratio       string   `json:"ratio,omitempty"`
 }
 
 type channelOtherConfig struct {
@@ -231,11 +235,7 @@ func (a *TaskAdaptor) EstimateBilling(c *gin.Context, _ *relaycommon.RelayInfo) 
 	if err != nil {
 		return nil
 	}
-	duration, err := resolveDuration(req)
-	if err != nil {
-		return nil
-	}
-	return map[string]float64{"seconds": float64(duration)}
+	return taskcommon.DefaultEstimateBilling(req)
 }
 
 func (a *TaskAdaptor) BuildRequestURL(_ *relaycommon.RelayInfo) (string, error) {
@@ -282,17 +282,22 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 		return nil, err
 	}
 
+	resolution := taskcommon.DefaultString(metadata.Resolution, "")
+	aspectRatio := taskcommon.DefaultString(metadata.Ratio, req.Size)
+
 	payload := requestPayload{
-		ModelID:  modelConfig.ModelID,
-		GroupID:  modelConfig.GroupID,
-		Prompt:   buildPromptWithReferences(req.Prompt, req.Images, metadata.Videos),
-		Duration: duration,
+		ModelID:     modelConfig.ModelID,
+		GroupID:     modelConfig.GroupID,
+		Prompt:      buildPromptWithReferences(req.Prompt, req.Images, metadata.Videos),
+		Duration:    duration,
 		Values: requestValues{
 			Orientation: taskcommon.DefaultString(metadata.Orientation, defaultOrientation),
 			Size:        resolveSize(req, metadata),
 			Videos:      metadata.Videos,
 		},
-		Images: req.Images,
+		Images:      req.Images,
+		AspectRatio: aspectRatio,
+		Resolution:  resolution,
 	}
 
 	body, err := common.Marshal(payload)
